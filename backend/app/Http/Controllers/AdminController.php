@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+<<<<<<< HEAD
 use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
@@ -32,6 +33,47 @@ class AdminController extends Controller
             'password_hash' => Hash::make($request->password),
             'role' => $request->role,
             'status' => 'active',
+=======
+use Illuminate\Validation\Rules\Password;
+
+class AdminController extends Controller
+{
+    /**
+     * Liste tous les utilisateurs (GET /admin/users)
+     */
+    public function index()
+    {
+        $users = User::all();
+        return response()->json($users, 200);
+    }
+
+    /**
+     * Créer un utilisateur (POST /admin/users)
+     */
+    public function store(Request $request)
+    {
+        // Validation des données
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => [
+                'required',
+                Password::min($request->role === 'ADMIN' ? 15 : 12)
+                    ->mixedCase()
+                    ->numbers()
+                    ->symbols()
+            ],
+            'role' => 'required|in:ADMIN,CLIENT'
+        ]);
+
+        // Créer l'utilisateur
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'role' => $validated['role'],
+            'status' => 'active'
+>>>>>>> f986177bbf45fb09eefb599d8cfbfa712757f126
         ]);
 
         return response()->json([
@@ -40,6 +82,7 @@ class AdminController extends Controller
         ], 201);
     }
 
+<<<<<<< HEAD
     // PUT/PATCH /admin/users/{id}   modifier un utilisateur 
     public function update(Request $request, $id)
     {
@@ -83,11 +126,65 @@ class AdminController extends Controller
             return response()->json([
                 'message' => 'Vous ne pouvez pas supprimer votre propre compte'
             ], 403);
+=======
+    /**
+     * Afficher un utilisateur spécifique (GET /admin/users/{id})
+     */
+    public function show($id)
+    {
+        $user = User::find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur introuvable'], 404);
+        }
+
+        return response()->json($user, 200);
+    }
+
+    /**
+     * Mettre à jour un utilisateur (PUT /admin/users/{id})
+     */
+    public function update(Request $request, $id)
+    {
+        $user = User::find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur introuvable'], 404);
+        }
+
+        // Validation
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $id,
+            'role' => 'sometimes|in:ADMIN,CLIENT',
+            'status' => 'sometimes|in:active,disabled'
+        ]);
+
+        // Mise à jour
+        $user->update($validated);
+
+        return response()->json([
+            'message' => 'Utilisateur mis à jour',
+            'user' => $user
+        ], 200);
+    }
+
+    /**
+     * Supprimer un utilisateur (DELETE /admin/users/{id})
+     */
+    public function destroy($id)
+    {
+        $user = User::find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'Utilisateur introuvable'], 404);
+>>>>>>> f986177bbf45fb09eefb599d8cfbfa712757f126
         }
 
         $user->delete();
 
         return response()->json([
+<<<<<<< HEAD
             'message' => 'Utilisateur supprimé avec succès'
         ]);
     }
@@ -116,3 +213,9 @@ class AdminController extends Controller
         ]);
     }
 }
+=======
+            'message' => 'Utilisateur supprimé'
+        ], 200);
+    }
+}
+>>>>>>> f986177bbf45fb09eefb599d8cfbfa712757f126
