@@ -46,7 +46,7 @@ function Waveform({ played = false }) {
 }
 
 // ── Mini audio player per message ────────────────────────────
-function MessagePlayer({ audioUrl }) {
+function MessagePlayer({ audioUrl, onEnded }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -79,14 +79,17 @@ function MessagePlayer({ audioUrl }) {
         src={audioUrl}
         onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
         onLoadedMetadata={(e) => setDuration(e.target.duration)}
-        onEnded={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          if (onEnded) onEnded();
+        }}
       />
     </div>
   );
 }
 
 // ── Message card ──────────────────────────────────────────────
-function MessageCard({ msg }) {
+function MessageCard({ msg, onMarkAsRead }) {
   const isUnread = msg.status === "unread";
   return (
     <div className={`msg-card ${isUnread ? "msg-card--unread" : ""}`}>
@@ -103,7 +106,7 @@ function MessageCard({ msg }) {
         )}
       </div>
       {msg.audio_url ? (
-        <MessagePlayer audioUrl={msg.audio_url} />
+        <MessagePlayer audioUrl={msg.audio_url} onEnded={isUnread ? () => onMarkAsRead(msg.id) : null} />
       ) : (
         <div className="audio-player" style={{ justifyContent: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
           Fichier audio non disponible
@@ -246,6 +249,20 @@ export default function ClientDashboard() {
     }
   };
 
+  const handleMarkAsRead = async (messageId) => {
+    try {
+      await api.put(`/messages/${messageId}/read`);
+      // Mettre à jour l'état local
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, status: "read" } : msg
+        )
+      );
+    } catch (err) {
+      console.error("Erreur lors du marquage comme lu:", err);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     window.location.href = "/";
@@ -302,7 +319,7 @@ export default function ClientDashboard() {
                 <p className="inbox-empty__text">Aucun message reçu pour l'instant.</p>
               </div>
             ) : (
-              messages.map((msg) => <MessageCard key={msg.id} msg={msg} />)
+              messages.map((msg) => <MessageCard key={msg.id} msg={msg} onMarkAsRead={handleMarkAsRead} />)
             )}
           </div>
         </div>

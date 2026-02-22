@@ -66,4 +66,16 @@ class MessageController extends Controller
             'data'    => $message,
         ], 201);
     }
+
+    // PUT /messages/{id}/read — marquer un message comme lu
+    public function markAsRead(Request $request, $id)
+    {
+        $message = Message::where('id', $id)
+            ->where('receiver_id', $request->user()->id)
+            ->firstOrFail();
+
+        $message->update(['status' => 'read']);
+
+        return response()->json(['message' => 'Message marqué comme lu']);
+    }
 }
