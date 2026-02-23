@@ -5,10 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class MessageController extends Controller
 {
-    // GET /users/recipients — liste des autres clients (pour le sélecteur destinataire)
+    #[OA\Get(
+        path: "/users/recipients",
+        summary: "Liste des destinataires disponibles",
+        tags: ["Messages"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Liste des utilisateurs clients"),
+            new OA\Response(response: 401, description: "Non authentifié")
+        ]
+    )]
     public function recipients(Request $request)
     {
         $users = User::where('role', 'CLIENT')
@@ -20,7 +30,16 @@ class MessageController extends Controller
         return response()->json($users);
     }
 
-    // GET /messages — messages reçus par l'utilisateur connecté
+    #[OA\Get(
+        path: "/messages",
+        summary: "Liste des messages reçus",
+        tags: ["Messages"],
+        security: [["bearerAuth" => []]],
+        responses: [
+            new OA\Response(response: 200, description: "Liste des messages vocaux reçus"),
+            new OA\Response(response: 401, description: "Non authentifié")
+        ]
+    )]
     public function index(Request $request)
     {
         $messages = Message::where('receiver_id', $request->user()->id)
@@ -43,7 +62,30 @@ class MessageController extends Controller
         return response()->json($messages);
     }
 
-    // POST /messages — envoyer un message vocal
+    #[OA\Post(
+        path: "/messages",
+        summary: "Envoyer un message vocal",
+        tags: ["Messages"],
+        security: [["bearerAuth" => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: "multipart/form-data",
+                schema: new OA\Schema(
+                    required: ["audio", "receiver_id"],
+                    properties: [
+                        new OA\Property(property: "audio", type: "string", format: "binary"),
+                        new OA\Property(property: "receiver_id", type: "integer", example: 2)
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: "Message envoyé avec succès"),
+            new OA\Response(response: 400, description: "Données invalides"),
+            new OA\Response(response: 401, description: "Non authentifié")
+        ]
+    )]
     public function store(Request $request)
     {
         $request->validate([
@@ -67,7 +109,20 @@ class MessageController extends Controller
         ], 201);
     }
 
-    // PUT /messages/{id}/read — marquer un message comme lu
+    #[OA\Put(
+        path: "/messages/{id}/read",
+        summary: "Marquer un message comme lu",
+        tags: ["Messages"],
+        security: [["bearerAuth" => []]],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Message marqué comme lu"),
+            new OA\Response(response: 404, description: "Message introuvable"),
+            new OA\Response(response: 401, description: "Non authentifié")
+        ]
+    )]
     public function markAsRead(Request $request, $id)
     {
         $message = Message::where('id', $id)
