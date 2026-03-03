@@ -1,0 +1,929 @@
+openapi: 3.0.3
+info:
+  title: API Moustass
+  description: |
+    API REST sécurisée pour l'application de messagerie vocale **Moustass** — Barbichetz Ltd.
+    
+    ## Authentification
+    Toutes les routes protégées nécessitent un token Bearer Sanctum obtenu via `POST /auth/login`.
+    
+    Incluez le token dans chaque requête :
+    ```
+    Authorization: Bearer {access_token}
+    ```
+    
+    ## Rôles
+    - **CLIENT** : accès aux routes de messagerie vocale
+    - **ADMIN** : accès à toutes les routes + gestion utilisateurs + backups
+  version: 1.0.0
+  contact:
+    name: Équipe Moustass
+    email: admin@moustass.com
+
+servers:
+  - url: http://127.0.0.1:8000/api
+    description: Serveur de développement local
+  - url: https://www.moustass.com/api
+    description: Serveur de production
+
+tags:
+  - name: Santé
+    description: Vérification de l'état du serveur
+  - name: Authentification
+    description: Inscription, connexion et profil
+  - name: Messages
+    description: Envoi et réception de messages vocaux
+  - name: Utilisateurs
+    description: Liste des destinataires (CLIENT)
+  - name: Admin - Utilisateurs
+    description: CRUD complet des utilisateurs (ADMIN uniquement)
+  - name: Admin - Backups
+    description: Sauvegarde et restauration de la base de données (ADMIN uniquement)
+
+# ════════════════════════════════════════════════════════════
+#  PATHS
+# ════════════════════════════════════════════════════════════
+paths:
+
+  # ── SANTÉ ──────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Santé]
+      summary: Vérification de l'état du serveur
+      description: Retourne un statut OK si le serveur est opérationnel. Utilisé pour les tests et la démo.
+      responses:
+        '200':
+          description: Serveur opérationnel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ── AUTHENTIFICATION ───────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Authentification]
+      summary: Créer un compte client
+      description: |
+        Crée un nouveau compte CLIENT. Retourne un `client_secret` à stocker côté client
+        — il ne sera **jamais** affiché à nouveau.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              nom: Dupont
+              prenom: Alice
+              telephone: "+230 5712 3456"
+              email: alice@moustass.com
+              password: "Alice@Secure123"
+      responses:
+        '201':
+          description: Compte créé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '422':
+          description: Erreur de validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [Authentification]
+      summary: Se connecter
+      description: |
+        Authentifie un utilisateur et retourne un token Bearer Sanctum.
+        
+        Le token doit être inclus dans toutes les requêtes protégées :
+        `Authorization: Bearer {access_token}`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: alice@moustass.com
+              password: "Alice@Secure123"
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Identifiants invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Identifiants invalides
+        '403':
+          description: Compte désactivé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                message: Compte désactivé
+
+  /auth/me:
+    get:
+      tags: [Authentification]
+      summary: Profil de l'utilisateur connecté
+      description: Retourne les informations de l'utilisateur authentifié.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profil retourné avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  # ── UTILISATEURS (CLIENT) ──────────────────────────────────
+  /users:
+    get:
+      tags: [Utilisateurs]
+      summary: Liste des destinataires disponibles
+      description: Retourne la liste de tous les utilisateurs (pour le sélecteur de destinataire côté client).
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Liste retournée avec succès
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  # ── MESSAGES ───────────────────────────────────────────────
+  /messages:
+    get:
+      tags: [Messages]
+      summary: Boîte de réception
+      description: Retourne tous les messages vocaux reçus par l'utilisateur connecté.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Messages retournés avec succès
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+    post:
+      tags: [Messages]
+      summary: Envoyer un message vocal
+      description: |
+        Envoie un fichier audio à un destinataire.
+        
+        Le fichier doit être envoyé en `multipart/form-data`.
+        Formats acceptés : `webm`, `ogg`, `mp4`, `wav` (max 20 Mo).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio, receiver_id]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Fichier audio (webm, ogg, mp4, wav — max 20 Mo)
+                receiver_id:
+                  type: integer
+                  description: ID de l'utilisateur destinataire
+                  example: 3
+      responses:
+        '201':
+          description: Message envoyé avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message envoyé avec succès
+                  data:
+                    $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '422':
+          description: Fichier manquant ou destinataire invalide
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /messages/{id}/read:
+    patch:
+      tags: [Messages]
+      summary: Marquer un message comme lu
+      description: Met à jour le statut d'un message reçu de `unread` à `read`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID du message
+          schema:
+            type: integer
+            example: 5
+      responses:
+        '200':
+          description: Message marqué comme lu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Message marqué comme lu
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── ADMIN - UTILISATEURS ───────────────────────────────────
+  /admin/users:
+    get:
+      tags: [Admin - Utilisateurs]
+      summary: Liste tous les utilisateurs
+      description: Retourne la liste complète de tous les utilisateurs. Réservé aux ADMINS.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Liste retournée avec succès
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags: [Admin - Utilisateurs]
+      summary: Créer un utilisateur
+      description: |
+        Crée un nouvel utilisateur (CLIENT ou ADMIN).
+        Si le rôle est CLIENT, un `client_secret` est généré et retourné une seule fois.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            example:
+              nom: Martin
+              prenom: Bob
+              telephone: "+230 5723 4567"
+              email: bob@moustass.com
+              password: "Bob@Secure123!"
+              role: CLIENT
+      responses:
+        '201':
+          description: Utilisateur créé avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /admin/users/{id}:
+    get:
+      tags: [Admin - Utilisateurs]
+      summary: Détails d'un utilisateur
+      description: Retourne le profil complet d'un utilisateur spécifique.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Profil retourné avec succès
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Admin - Utilisateurs]
+      summary: Modifier un utilisateur
+      description: Met à jour toutes les informations d'un utilisateur.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: Utilisateur modifié avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Utilisateur modifié avec succès
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+    delete:
+      tags: [Admin - Utilisateurs]
+      summary: Supprimer un utilisateur
+      description: Supprime définitivement un utilisateur. Un admin ne peut pas supprimer son propre compte.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Utilisateur supprimé avec succès
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Utilisateur supprimé avec succès
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{id}/disable:
+    patch:
+      tags: [Admin - Utilisateurs]
+      summary: Désactiver un utilisateur
+      description: Passe le statut de l'utilisateur à `disabled`. L'utilisateur ne peut plus se connecter.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Utilisateur désactivé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/users/{id}/enable:
+    patch:
+      tags: [Admin - Utilisateurs]
+      summary: Activer un utilisateur
+      description: Passe le statut de l'utilisateur à `active`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Utilisateur activé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── ADMIN - BACKUPS ────────────────────────────────────────
+  /admin/backups/full:
+    post:
+      tags: [Admin - Backups]
+      summary: Sauvegarde complète
+      description: Lance un `mysqldump` complet de toute la base de données. Le fichier est stocké dans `storage/app/backups/`.
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Sauvegarde complète réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Sauvegarde complète réussie
+                  file:
+                    type: string
+                    example: full_20260220_221500.sql
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Échec de la sauvegarde
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/backups/incremental:
+    post:
+      tags: [Admin - Backups]
+      summary: Sauvegarde incrémentale
+      description: |
+        Sauvegarde uniquement les lignes modifiées depuis le dernier backup réussi.
+        Tables concernées : `users`, `messages`, `backups_log`.
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          description: Sauvegarde incrémentale réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Sauvegarde incrémentale réussie
+                  file:
+                    type: string
+                    example: incremental_20260220_221500.sql
+                  since:
+                    type: string
+                    example: "2026-02-19 10:00:00"
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Échec de la sauvegarde
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/backups/restore:
+    post:
+      tags: [Admin - Backups]
+      summary: Restaurer depuis le dernier backup
+      description: |
+        Restaure la base de données depuis le dernier backup réussi (full ou incremental).
+        
+        ⚠️ **Attention** : cette opération écrase les données actuelles.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Restauration réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Restauration réussie
+                  restored_from:
+                    type: string
+                    example: full_20260220_221500.sql
+                  backup_date:
+                    type: string
+                    format: date-time
+                  type:
+                    type: string
+                    enum: [full, incremental]
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Aucun backup disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Échec de la restauration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/backups/history:
+    get:
+      tags: [Admin - Backups]
+      summary: Historique des sauvegardes
+      description: Retourne la liste de tous les backups enregistrés, triés par date décroissante.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Historique retourné avec succès
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BackupLog'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+# ════════════════════════════════════════════════════════════
+#  COMPONENTS
+# ════════════════════════════════════════════════════════════
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token Sanctum obtenu via POST /auth/login
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: ID de l'utilisateur
+      schema:
+        type: integer
+        example: 1
+
+  # ── SCHEMAS ─────────────────────────────────────────────────
+  schemas:
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nom:
+          type: string
+          example: Dupont
+        prenom:
+          type: string
+          example: Alice
+        telephone:
+          type: string
+          example: "+230 5712 3456"
+        email:
+          type: string
+          format: email
+          example: alice@moustass.com
+        role:
+          type: string
+          enum: [ADMIN, CLIENT]
+          example: CLIENT
+        status:
+          type: string
+          enum: [active, disabled]
+          example: active
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-20T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-02-20T10:00:00Z"
+
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 2
+        nom:
+          type: string
+          example: Martin
+        prenom:
+          type: string
+          example: Bob
+        email:
+          type: string
+          format: email
+          example: bob@moustass.com
+        role:
+          type: string
+          enum: [ADMIN, CLIENT]
+          example: CLIENT
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        sender_email:
+          type: string
+          example: alice@moustass.com
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-20T14:30:00Z"
+        duration_seconds:
+          type: integer
+          nullable: true
+          example: 12
+        status:
+          type: string
+          enum: [unread, read]
+          example: unread
+        audio_url:
+          type: string
+          nullable: true
+          example: "https://www.moustass.com/storage/messages/abc123.webm"
+
+    BackupLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 3
+        type:
+          type: string
+          enum: [full, incremental]
+          example: incremental
+        status:
+          type: string
+          enum: [success, failed]
+          example: success
+        file:
+          type: string
+          example: incremental_20260220_221500.sql
+        notes:
+          type: string
+          nullable: true
+          example: "Incrémental depuis 2026-02-19 10:00:00 — 3 tables"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-20T22:15:00Z"
+
+    RegisterRequest:
+      type: object
+      required: [nom, prenom, telephone, email, password]
+      properties:
+        nom:
+          type: string
+          example: Dupont
+        prenom:
+          type: string
+          example: Alice
+        telephone:
+          type: string
+          example: "+230 5712 3456"
+        email:
+          type: string
+          format: email
+          example: alice@moustass.com
+        password:
+          type: string
+          minLength: 12
+          description: "Min 12 caractères, 1 majuscule, 1 minuscule, 1 chiffre, 1 caractère spécial"
+          example: "Alice@Secure123"
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Compte créé avec succès
+        client_secret:
+          type: string
+          description: Secret HMAC retourné UNE SEULE FOIS — à stocker côté client
+          example: "a3f8c2d1e4b7..."
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: alice@moustass.com
+        password:
+          type: string
+          example: "Alice@Secure123"
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Token Bearer Sanctum à utiliser dans les requêtes suivantes
+          example: "26|hoJTgIfHhQ9t1ZyV..."
+        token_type:
+          type: string
+          example: Bearer
+
+    CreateUserRequest:
+      type: object
+      required: [nom, prenom, telephone, email, password, role]
+      properties:
+        nom:
+          type: string
+          example: Martin
+        prenom:
+          type: string
+          example: Bob
+        telephone:
+          type: string
+          example: "+230 5723 4567"
+        email:
+          type: string
+          format: email
+          example: bob@moustass.com
+        password:
+          type: string
+          minLength: 12
+          example: "Bob@Secure123!"
+        role:
+          type: string
+          enum: [ADMIN, CLIENT]
+          example: CLIENT
+
+    CreateUserResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Utilisateur créé avec succès
+        user:
+          $ref: '#/components/schemas/User'
+        client_secret:
+          type: string
+          nullable: true
+          description: Présent uniquement si rôle CLIENT — retourné une seule fois
+          example: "b2e9f3a1d6c8..."
+
+    UpdateUserRequest:
+      type: object
+      required: [nom, prenom, telephone, email, role, status]
+      properties:
+        nom:
+          type: string
+          example: Dupont
+        prenom:
+          type: string
+          example: Alice
+        telephone:
+          type: string
+          example: "+230 5712 3456"
+        email:
+          type: string
+          format: email
+          example: alice@moustass.com
+        password:
+          type: string
+          nullable: true
+          description: Laisser vide pour conserver le mot de passe actuel
+        role:
+          type: string
+          enum: [ADMIN, CLIENT]
+          example: CLIENT
+        status:
+          type: string
+          enum: [active, disabled]
+          example: active
+
+    SuccessMessage:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Opération réussie
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Une erreur est survenue
+
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+          example: The given data was invalid
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            email: ["L'email est déjà utilisé"]
+            password: ["Le mot de passe doit contenir au moins 12 caractères"]
+
+  # ── RESPONSES RÉUTILISABLES ────────────────────────────────
+  responses:
+    Unauthenticated:
+      description: Token manquant ou invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Unauthenticated
+
+    Forbidden:
+      description: Accès refusé — rôle insuffisant
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Forbidden
+
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: Not found
+
+    ValidationError:
+      description: Erreur de validation des données
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'

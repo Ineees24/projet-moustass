@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://www.moustass.com/api", // https://www.moustass.com/api
+  baseURL: import.meta.env.DEV ? "/api" : "https://www.moustass.com/api",
 });
 
 api.interceptors.request.use((config) => {
@@ -9,6 +9,7 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  config.headers.Accept = "application/json";
   return config;
 });
 

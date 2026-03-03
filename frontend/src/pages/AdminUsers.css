@@ -431,33 +431,106 @@
     padding-right: 3rem;
   }
 }
+/* ── À ajouter à la fin de AdminUsers.css ── */
 
-/* Styles pour les boutons de backup */
-.admin-users__btn--backup {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(139, 92, 246, 0.95) 100%);
+/* Bouton "Voir" (info) */
+.admin-users__btn--info {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+}
+.admin-users__btn--info:hover {
+  background: rgba(37, 99, 235, 0.15);
+}
+
+/* Modal VIEW — profil complet */
+.modal-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 0.5rem;
+}
+
+.modal-view__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: white;
-  border-color: transparent;
+  font-size: 1.4rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -0.02em;
 }
 
-.admin-users__btn--backup:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 1) 0%, rgba(139, 92, 246, 1) 100%);
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+.modal-view__name {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.02em;
 }
 
-.admin-users__btn--backup-incremental {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.95) 0%, rgba(239, 68, 68, 0.95) 100%);
-  color: white;
-  border-color: transparent;
+.modal-view__grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
 }
 
-.admin-users__btn--backup-incremental:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 1) 0%, rgba(239, 68, 68, 1) 100%);
-  box-shadow: 0 8px 20px rgba(236, 72, 153, 0.4);
+.modal-view__item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.admin-users__meta {
+.modal-view__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.modal-view__value {
+  font-size: 0.9rem;
+  color: #1e293b;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.modal-view__actions {
   display: flex;
   gap: 0.75rem;
-  align-items: center;
-  flex-wrap: wrap;
+  width: 100%;
+  justify-content: center;
+  padding-top: 0.5rem;
+}
+
+/* Ligne côte à côte (prénom + nom) */
+.modal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* Ligne côte à côte dans Login */
+.login-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 500px) {
+  .modal-row,
+  .login-row,
+  .modal-view__grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -4,6 +4,7 @@ import AdminUsers from "./pages/AdminUsers";
 import ClientDashboard from "./pages/ClientDashboard";
 import AdminRoute from "./components/AdminRoute";
 import ClientRoute from "./components/ClientRoute";
+import AdminBackup from "./pages/AdminBackup";
 
 export default function App() {
   return (
@@ -26,6 +27,15 @@ export default function App() {
           <ClientRoute>
             <ClientDashboard />
           </ClientRoute>
+        }
+      />
+
+      <Route
+        path="/admin/backups"
+        element={
+          <AdminRoute>
+            <AdminBackup />
+          </AdminRoute>
         }
       />
     </Routes>

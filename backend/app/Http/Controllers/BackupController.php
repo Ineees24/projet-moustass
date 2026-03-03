@@ -2,314 +2,264 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BackupLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
-use App\Models\BackupLog;
-use OpenApi\Attributes as OA;
 
 class BackupController extends Controller
 {
-    private $backupPath;
+    // ─────────────────────────────────────────────
+    // Chemins et configuration
+    // ─────────────────────────────────────────────
 
-    public function __construct()
+    // Dossier où les backups seront stockés
+    private function backupDir(): string
     {
-        $this->backupPath = storage_path('app/backups');
-        if (!File::exists($this->backupPath)) {
-            File::makeDirectory($this->backupPath, 0755, true);
+        $dir = storage_path('app/backups');
+        if (! is_dir($dir)) {
+            mkdir($dir, 0755, true);
         }
+        return $dir;
     }
 
-    #[OA\Get(
-        path: "/admin/backups/history",
-        summary: "Historique des sauvegardes",
-        tags: ["Backups"],
-        security: [["bearerAuth" => []]],
-        responses: [
-            new OA\Response(response: 200, description: "Liste des sauvegardes"),
-            new OA\Response(response: 401, description: "Non authentifié"),
-            new OA\Response(response: 403, description: "Accès refusé")
-        ]
-    )]
-    public function history()
+    // Paramètres MySQL depuis le .env
+    private function dbConfig(): array
     {
-        $backups = BackupLog::orderBy('created_at', 'desc')->get();
-        return response()->json([
-            'backups' => $backups,
-            'count' => $backups->count()
-        ]);
+        return [
+            'host'     => config('database.connections.mysql.host'),
+            'port'     => config('database.connections.mysql.port'),
+            'database' => config('database.connections.mysql.database'),
+            'username' => config('database.connections.mysql.username'),
+            'password' => config('database.connections.mysql.password'),
+        ];
     }
 
-    #[OA\Post(
-        path: "/admin/backups/full",
-        summary: "Créer une sauvegarde complète",
-        tags: ["Backups"],
-        security: [["bearerAuth" => []]],
-        responses: [
-            new OA\Response(response: 201, description: "Backup complet créé avec succès"),
-            new OA\Response(response: 500, description: "Erreur lors du backup"),
-            new OA\Response(response: 403, description: "Accès refusé")
-        ]
-    )]
-    public function full(Request $request)
+    // ─────────────────────────────────────────────
+    // POST /admin/backups/incremental
+    // Sauvegarde incrémentale : exporte uniquement
+    // les lignes modifiées depuis le dernier backup
+    // ─────────────────────────────────────────────
+    public function incremental()
     {
         try {
-            $timestamp = now()->format('Y-m-d_H-i-s');
-            $filename = "full_backup_{$timestamp}.sql";
-            $filepath = $this->backupPath . '/' . $filename;
+            $db       = $this->dbConfig();
+            $dir      = $this->backupDir();
+            $filename = 'incremental_' . now()->format('Ymd_His') . '.sql';
+            $filepath = $dir . '/' . $filename;
 
-            $host = env('DB_HOST', '127.0.0.1');
-            $database = env('DB_DATABASE', 'moustass');
-            $username = env('DB_USERNAME', 'root');
-            $password = env('DB_PASSWORD', '');
-
-            $mysqldumpPath = 'C:\\wamp64\\bin\\mysql\\mysql8.0.31\\bin\\mysqldump';
-
-            if (!file_exists($mysqldumpPath . '.exe')) {
-                $mysqlDir = 'C:\\wamp64\\bin\\mysql\\';
-                $versions = glob($mysqlDir . 'mysql*');
-                if (!empty($versions)) {
-                    $mysqldumpPath = $versions[0] . '\\bin\\mysqldump';
-                }
-            }
-
-            $command = sprintf(
-                '"%s" --host=%s --user=%s %s %s > "%s"',
-                $mysqldumpPath, $host, $username,
-                $password ? '--password=' . $password : '',
-                $database, $filepath
-            );
-
-            exec($command . ' 2>&1', $output, $returnCode);
-
-            if ($returnCode !== 0 || !file_exists($filepath)) {
-                throw new \Exception('Erreur mysqldump : ' . implode("\n", $output));
-            }
-
-            $backup = BackupLog::create([
-                'type' => 'full',
-                'file_path' => $filepath,
-                'status' => 'success',
-                'notes' => 'Backup complet créé avec succès',
-                'created_at' => now()
-            ]);
-
-            return response()->json([
-                'message' => 'Backup complet créé avec succès',
-                'backup' => $backup,
-                'file_size' => $this->formatBytes(filesize($filepath))
-            ], 201);
-
-        } catch (\Exception $e) {
-            BackupLog::create([
-                'type' => 'full',
-                'file_path' => $filepath ?? null,
-                'status' => 'failed',
-                'notes' => 'Erreur: ' . $e->getMessage(),
-                'created_at' => now()
-            ]);
-
-            return response()->json([
-                'message' => 'Erreur lors du backup',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    #[OA\Post(
-        path: "/admin/backups/incremental",
-        summary: "Créer une sauvegarde incrémentale",
-        tags: ["Backups"],
-        security: [["bearerAuth" => []]],
-        responses: [
-            new OA\Response(response: 201, description: "Backup incrémental créé avec succès"),
-            new OA\Response(response: 400, description: "Aucun backup complet trouvé"),
-            new OA\Response(response: 500, description: "Erreur lors du backup"),
-            new OA\Response(response: 403, description: "Accès refusé")
-        ]
-    )]
-    public function incremental(Request $request)
-    {
-        try {
+            // Trouve la date du dernier backup réussi
             $lastBackup = BackupLog::where('status', 'success')
-                ->orderBy('created_at', 'desc')
+                ->orderByDesc('created_at')
                 ->first();
 
-            if (!$lastBackup) {
-                return response()->json([
-                    'message' => 'Aucun backup complet trouvé. Créez d\'abord un backup complet.',
-                    'action' => 'POST /admin/backups/full'
-                ], 400);
+            $since = $lastBackup
+                ? $lastBackup->created_at
+                : '1970-01-01 00:00:00';
+
+            // Tables critiques à sauvegarder en incrémental
+            $tables = ['users', 'messages', 'backups_log'];
+
+            $sql = "-- Backup incrémental Moustass\n";
+            $sql .= "-- Depuis : {$since}\n";
+            $sql .= "-- Généré le : " . now() . "\n\n";
+            $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
+
+            foreach ($tables as $table) {
+                // Vérifie que la colonne created_at ou updated_at existe
+                $columns = DB::select("SHOW COLUMNS FROM `{$table}`");
+                $colNames = array_column($columns, 'Field');
+
+                $dateCol = in_array('updated_at', $colNames)
+                    ? 'updated_at'
+                    : (in_array('created_at', $colNames) ? 'created_at' : null);
+
+                if ($dateCol) {
+                    $rows = DB::table($table)
+                        ->where($dateCol, '>=', $since)
+                        ->get();
+                } else {
+                    // Si pas de colonne date, on exporte tout
+                    $rows = DB::table($table)->get();
+                }
+
+                if ($rows->isEmpty()) continue;
+
+                $sql .= "-- Table: {$table} ({$rows->count()} ligne(s))\n";
+
+                foreach ($rows as $row) {
+                    $row    = (array) $row;
+                    $cols   = '`' . implode('`, `', array_keys($row)) . '`';
+                    $vals   = implode(', ', array_map(function ($v) {
+                        return is_null($v) ? 'NULL' : "'" . addslashes($v) . "'";
+                    }, array_values($row)));
+                    $sql   .= "INSERT INTO `{$table}` ({$cols}) VALUES ({$vals}) ON DUPLICATE KEY UPDATE ";
+                    $updates = implode(', ', array_map(
+                        fn($k) => "`{$k}` = VALUES(`{$k}`)",
+                        array_keys($row)
+                    ));
+                    $sql .= $updates . ";\n";
+                }
+                $sql .= "\n";
             }
 
-            $timestamp = now()->format('Y-m-d_H-i-s');
-            $filename = "incremental_backup_{$timestamp}.sql";
-            $filepath = $this->backupPath . '/' . $filename;
+            $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
 
-            $this->exportIncrementalData($filepath, $lastBackup->created_at);
+            // Écrit le fichier SQL
+            file_put_contents($filepath, $sql);
 
-            $backup = BackupLog::create([
-                'type' => 'incremental',
+            // Enregistre dans backups_log
+            BackupLog::create([
+                'type'      => 'incremental',
                 'file_path' => $filepath,
-                'status' => 'success',
-                'notes' => "Backup incrémental depuis {$lastBackup->created_at}",
-                'created_at' => now()
+                'status'    => 'success',
+                'notes'     => "Incrémental depuis {$since} — " . count($tables) . " tables",
+                'created_at' => now(),
             ]);
 
             return response()->json([
-                'message' => 'Backup incrémental créé avec succès',
-                'backup' => $backup,
-                'since' => $lastBackup->created_at,
-                'file_size' => $this->formatBytes(filesize($filepath))
+                'message'   => 'Sauvegarde incrémentale réussie',
+                'file'      => $filename,
+                'since'     => $since,
             ], 201);
 
         } catch (\Exception $e) {
             BackupLog::create([
-                'type' => 'incremental',
-                'file_path' => $filepath ?? null,
-                'status' => 'failed',
-                'notes' => 'Erreur: ' . $e->getMessage(),
-                'created_at' => now()
+                'type'       => 'incremental',
+                'file_path'  => '',
+                'status'     => 'failed',
+                'notes'      => $e->getMessage(),
+                'created_at' => now(),
             ]);
 
             return response()->json([
-                'message' => 'Erreur lors du backup incrémental',
-                'error' => $e->getMessage()
+                'message' => 'Échec de la sauvegarde',
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
 
-    #[OA\Post(
-        path: "/admin/backups/restore",
-        summary: "Restaurer une sauvegarde",
-        tags: ["Backups"],
-        security: [["bearerAuth" => []]],
-        requestBody: new OA\RequestBody(
-            required: true,
-            content: new OA\JsonContent(
-                required: ["backup_id"],
-                properties: [
-                    new OA\Property(property: "backup_id", type: "integer", example: 1)
-                ]
-            )
-        ),
-        responses: [
-            new OA\Response(response: 200, description: "Base de données restaurée avec succès"),
-            new OA\Response(response: 404, description: "Fichier de backup introuvable"),
-            new OA\Response(response: 500, description: "Erreur lors de la restauration"),
-            new OA\Response(response: 403, description: "Accès refusé")
-        ]
-    )]
+    // ─────────────────────────────────────────────
+    // POST /admin/backups/full
+    // Sauvegarde complète via mysqldump
+    // ─────────────────────────────────────────────
+    public function full()
+    {
+        try {
+            $db       = $this->dbConfig();
+            $dir      = $this->backupDir();
+            $filename = 'full_' . now()->format('Ymd_His') . '.sql';
+            $filepath = $dir . '/' . $filename;
+
+            // Construction de la commande mysqldump
+            $password = $db['password']
+                ? '-p' . escapeshellarg($db['password'])
+                : '';
+
+            $command = sprintf(
+                'mysqldump -h %s -P %s -u %s %s %s > %s 2>&1',
+                escapeshellarg($db['host']),
+                escapeshellarg($db['port']),
+                escapeshellarg($db['username']),
+                $password,
+                escapeshellarg($db['database']),
+                escapeshellarg($filepath)
+            );
+
+            exec($command, $output, $returnCode);
+
+            if ($returnCode !== 0) {
+                throw new \Exception('mysqldump a échoué : ' . implode("\n", $output));
+            }
+
+            BackupLog::create([
+                'type'       => 'full',
+                'file_path'  => $filepath,
+                'status'     => 'success',
+                'notes'      => 'Sauvegarde complète mysqldump',
+                'created_at' => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Sauvegarde complète réussie',
+                'file'    => $filename,
+            ], 201);
+
+        } catch (\Exception $e) {
+            BackupLog::create([
+                'type'       => 'full',
+                'file_path'  => '',
+                'status'     => 'failed',
+                'notes'      => $e->getMessage(),
+                'created_at' => now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Échec de la sauvegarde complète',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    // POST /admin/backups/restore
+    // Restaure depuis le dernier backup réussi
+    // ─────────────────────────────────────────────
     public function restore(Request $request)
     {
-        $validated = $request->validate([
-            'backup_id' => 'required|exists:backups_log,id'
-        ]);
-
         try {
-            $backup = BackupLog::findOrFail($validated['backup_id']);
+            // Prend le dernier backup réussi (full ou incremental)
+            $backup = BackupLog::where('status', 'success')
+                ->orderByDesc('created_at')
+                ->first();
 
-            if (!File::exists($backup->file_path)) {
+            if (! $backup) {
                 return response()->json([
-                    'message' => 'Fichier de backup introuvable',
-                    'file_path' => $backup->file_path
+                    'message' => 'Aucun backup disponible pour la restauration',
                 ], 404);
             }
 
-            $host = env('DB_HOST', '127.0.0.1');
-            $database = env('DB_DATABASE', 'moustass');
-            $username = env('DB_USERNAME', 'root');
-            $password = env('DB_PASSWORD', '');
-
-            $mysqlPath = 'C:\\wamp64\\bin\\mysql\\mysql8.0.31\\bin\\mysql';
-
-            if (!file_exists($mysqlPath . '.exe')) {
-                $mysqlDir = 'C:\\wamp64\\bin\\mysql\\';
-                $versions = glob($mysqlDir . 'mysql*');
-                if (!empty($versions)) {
-                    $mysqlPath = $versions[0] . '\\bin\\mysql';
-                }
+            if (! file_exists($backup->file_path)) {
+                return response()->json([
+                    'message' => 'Fichier de backup introuvable : ' . $backup->file_path,
+                ], 404);
             }
 
-            $command = sprintf(
-                '"%s" --host=%s --user=%s %s %s < "%s"',
-                $mysqlPath, $host, $username,
-                $password ? '--password=' . $password : '',
-                $database, $backup->file_path
-            );
-
-            exec($command . ' 2>&1', $output, $returnCode);
-
-            if ($returnCode !== 0) {
-                throw new \Exception('Erreur restauration : ' . implode("\n", $output));
-            }
+            // Exécute le fichier SQL de restauration
+            $sql = file_get_contents($backup->file_path);
+            DB::unprepared($sql);
 
             return response()->json([
-                'message' => 'Base de données restaurée avec succès',
-                'backup' => $backup,
-                'restored_at' => now()
+                'message'    => 'Restauration réussie',
+                'restored_from' => basename($backup->file_path),
+                'backup_date'   => $backup->created_at,
+                'type'          => $backup->type,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Erreur lors de la restauration',
-                'error' => $e->getMessage()
+                'message' => 'Échec de la restauration',
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
 
-    private function exportIncrementalData($filepath, $since)
+    // ─────────────────────────────────────────────
+    // GET /admin/backups/history
+    // Liste tous les backups enregistrés
+    // ─────────────────────────────────────────────
+    public function history()
     {
-        $sql = "-- Backup incrémental depuis {$since}\n";
-        $sql .= "-- Généré le : " . now() . "\n\n";
+        $backups = BackupLog::orderByDesc('created_at')
+            ->get()
+            ->map(fn($b) => [
+                'id'         => $b->id,
+                'type'       => $b->type,
+                'status'     => $b->status,
+                'file'       => basename($b->file_path),
+                'notes'      => $b->notes,
+                'created_at' => $b->created_at,
+            ]);
 
-        $users = DB::table('users')
-            ->where(function($query) use ($since) {
-                $query->where('updated_at', '>', $since)
-                      ->orWhere('created_at', '>', $since);
-            })
-            ->get();
-
-        if ($users->count() > 0) {
-            $sql .= "-- Users modifiés/créés ({$users->count()})\n";
-            foreach ($users as $user) {
-                $sql .= $this->generateInsertStatement('users', (array)$user);
-            }
-            $sql .= "\n";
-        }
-
-        File::put($filepath, $sql);
-    }
-
-    private function generateInsertStatement($table, $data)
-    {
-        $columns = array_keys($data);
-        $values = array_map(function($value) {
-            if (is_null($value)) return 'NULL';
-            return "'" . addslashes($value) . "'";
-        }, array_values($data));
-
-        $updates = array_map(function($col) use ($data) {
-            $val = is_null($data[$col]) ? 'NULL' : "'" . addslashes($data[$col]) . "'";
-            return "`{$col}` = {$val}";
-        }, $columns);
-
-        return sprintf(
-            "INSERT INTO `%s` (`%s`) VALUES (%s) ON DUPLICATE KEY UPDATE %s;\n",
-            $table,
-            implode('`, `', $columns),
-            implode(', ', $values),
-            implode(', ', $updates)
-        );
-    }
-
-    private function formatBytes($bytes, $precision = 2)
-    {
-        $units = ['B', 'KB', 'MB', 'GB'];
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-        $bytes /= pow(1024, $pow);
-        return round($bytes, $precision) . ' ' . $units[$pow];
+        return response()->json($backups);
     }
 }

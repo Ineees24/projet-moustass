@@ -67,19 +67,21 @@
   border: 1px solid #fecaca;
 }
 
-.login-field {
+/* ── IMPORTANT : tous les sélecteurs scoped sous .login-card ── */
+
+.login-card .login-field {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
-.login-field label {
+.login-card .login-field label {
   font-size: 0.875rem;
   font-weight: 600;
   color: #334155;
 }
 
-.login-field input {
+.login-card .login-field input {
   width: 100%;
   padding: 0.85rem 1rem;
   font-size: 1rem;
@@ -91,18 +93,31 @@
   box-sizing: border-box;
 }
 
-.login-field input::placeholder {
+.login-card .login-field input::placeholder {
   color: #94a3b8;
 }
 
-.login-field input:hover {
+.login-card .login-field input:hover {
   border-color: #cbd5e1;
 }
 
-.login-field input:focus {
+.login-card .login-field input:focus {
   outline: none;
   border-color: #6366f1;
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+/* Ligne côte à côte (prénom + nom) */
+.login-card .login-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+@media (max-width: 500px) {
+  .login-card .login-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .login-submit {
@@ -131,4 +146,82 @@
 .login-submit:disabled {
   opacity: 0.8;
   cursor: not-allowed;
+}
+
+/* ── Onglets login / register ── */
+.login-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+  background: #f8fafc;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.login-tab--active {
+  background: #ffffff;
+  color: #1e293b;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.login-tab:hover:not(.login-tab--active) {
+  color: #334155;
+}
+
+/* ── Message succès ── */
+.login-success {
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #166534;
+  background: #f0fdf4;
+  border-radius: 10px;
+  border: 1px solid #bbf7d0;
+}
+
+/* ── Indication règles mot de passe ── */
+.login-hint {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ── Lien de bascule en bas ── */
+.login-switch {
+  text-align: center;
+  margin: 1rem 0 0;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.login-switch-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-switch-btn:hover {
+  color: #4f46e5;
 }

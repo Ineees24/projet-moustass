@@ -24,7 +24,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Messages vocaux
     Route::get('/messages', [MessageController::class, 'index']);
     Route::post('/messages', [MessageController::class, 'store']);
-    Route::put('/messages/{id}/read', [MessageController::class, 'markAsRead']);
+    // Marquer un message comme lu
+    Route::patch('/messages/{id}/read', [MessageController::class, 'markAsRead']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
@@ -33,6 +34,9 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 
     // Créer un utilisateur
     Route::post('/admin/users', [AdminController::class, 'store']);
+
+    // afficher un utilisateur
+    Route::get('/admin/users/{id}', [AdminController::class, 'show']);
 
     // Modifier un utilisateur
     Route::put('/admin/users/{id}', [AdminController::class, 'update']);
@@ -45,9 +49,10 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::patch('/admin/users/{id}/disable', [AdminController::class, 'disable']);
     Route::patch('/admin/users/{id}/enable', [AdminController::class, 'enable']);
 
-    // Backup routes
-    Route::get('/admin/backups/history', [BackupController::class, 'history']);
-    Route::post('/admin/backups/full', [BackupController::class, 'full']);
+
+
+    Route::post('/admin/backups/full',        [BackupController::class, 'full']);
     Route::post('/admin/backups/incremental', [BackupController::class, 'incremental']);
-    Route::post('/admin/backups/restore', [BackupController::class, 'restore']);
+    Route::post('/admin/backups/restore',     [BackupController::class, 'restore']);
+    Route::get('/admin/backups/history',      [BackupController::class, 'history']);
 });
